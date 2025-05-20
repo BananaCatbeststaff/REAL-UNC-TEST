@@ -1,0 +1,125 @@
+local TeleportService = game:GetService("TeleportService")
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local player = Players.LocalPlayer
+
+-- Espera o jogo carregar
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
+local targetCFrame = CFrame.new(-1009.90778, 328.222443, 3.28182697,
+    0.999032915, 6.37100612e-08, -0.0439680144,
+    -6.31334274e-08, 1, 1.45033345e-08,
+    0.0439680144, -1.17134578e-08, 0.999032915)
+
+local running = true
+local isTeleporting = false
+
+-- Função para esperar o personagem e pegar HRP
+local function waitForCharacter()
+    local char = player.Character or player.CharacterAdded:Wait()
+    local hrp = char:WaitForChild("HumanoidRootPart")
+    return char, hrp
+end
+
+local function teleportToCFrame()
+    local char, hrp = waitForCharacter()
+    hrp.CFrame = targetCFrame
+end
+
+local function AutoFarmSlapples()
+    while running do
+        task.wait(0.5)
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local slapples = workspace:FindFirstChild("Arena")
+                            and workspace.Arena:FindFirstChild("island5")
+                            and workspace.Arena.island5:FindFirstChild("Slapples")
+            if slapples then
+                for _, slapple in ipairs(slapples:GetChildren()) do
+                    if (slapple.Name == "Slapple" or slapple.Name == "GoldenSlapple") and slapple:FindFirstChild("Glove") then
+                        local glovePart = slapple.Glove
+                        local touchTransmitter = glovePart:FindFirstChildWhichIsA("TouchTransmitter")
+                        if touchTransmitter then
+                            firetouchinterest(hrp, glovePart, 0)
+                            task.wait(0.05)
+                            firetouchinterest(hrp, glovePart, 1)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function ServerHop()
+    if isTeleporting then return end
+    isTeleporting = true
+
+    local placeId = game.PlaceId
+
+    while true do
+        local success, response = pcall(function()
+            return game:HttpGetAsync("https://games.roblox.com/v1/games/"..placeId.."/servers/Public?sortOrder=Asc&limit=100")
+        end)
+
+        if success then
+            local servers = HttpService:JSONDecode(response).data
+            local foundServer = false
+
+            for _, server in pairs(servers) do
+                if server.playing < server.maxPlayers then
+                    -- Antes de teleportar, salvar no shared o código para rodar no próximo servidor
+                    shared.nextHopScript = [[
+                        -- Aqui vai o código que será executado no próximo servidor
+                        -- Você pode copiar o código do AutoFarm e teleport pro CFrame
+                    ]]
+
+                    local teleportSuccess, teleportError = pcall(function()
+                        TeleportService:TeleportToPlaceInstance(placeId, server.id, player)
+                    end)
+
+                    if teleportSuccess then
+                        foundServer = true
+                        local conn
+                        conn = TeleportService.TeleportInitFailed:Connect(function()
+                            isTeleporting = false
+                            conn:Disconnect()
+                        end)
+                        return
+                    else
+                        warn("Erro ao tentar teleportar:", teleportError)
+                    end
+                end
+            end
+
+            if not foundServer then
+                warn("Nenhum servidor disponível para hop. Tentando novamente em 10 segundos...")
+            end
+        else
+            warn("Falha ao pegar lista de servidores. Tentando novamente em 10 segundos...")
+        end
+
+        task.wait(10)
+    end
+end
+
+-- No começo do script, verifique se existe código salvo para rodar
+if shared.nextHopScript then
+    local success, err = pcall(loadstring(shared.nextHopScript))
+    if not success then
+        warn("Erro ao rodar script de hop salvo:", err)
+    end
+    shared.nextHopScript = nil -- limpa para não rodar novamente
+else
+    teleportToCFrame()
+    task.wait(1)
+    task.spawn(AutoFarmSlapples)
+
+    task.wait(2) -- tempo farmando
+
+    running = false
+    ServerHop()
+end
